@@ -1,0 +1,5 @@
+__pycache__/
+venv/
+course_feedback.csv
+*.pyc
+.streamlit/secrets.toml
