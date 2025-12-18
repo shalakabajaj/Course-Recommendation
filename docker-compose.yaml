@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  course-recommender:
+    build: .
+    container_name: course_recommender_app
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+    environment:
+      - PYTHONUNBUFFERED=1
