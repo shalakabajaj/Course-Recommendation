@@ -88,11 +88,13 @@ spec:
         stage('Build Docker Image') {
             steps {
                 container('dind') {
-                    sh """
-                        docker build --no-cache \
-                          -t ${APP_NAME}:${BUILD_NUMBER} \
-                          -t ${APP_NAME}:latest .
-                    """
+                    withEnv(["DOCKER_HOST=tcp://localhost:2375"]) {
+                        sh """
+                            docker build --no-cache \
+                              -t ${APP_NAME}:${BUILD_NUMBER} \
+                              -t ${APP_NAME}:latest .
+                        """
+                    }
                 }
             }
         }
@@ -100,7 +102,15 @@ spec:
         stage('SonarQube Analysis') {
             steps {
                 container('sonar-scanner') {
-                    sh "sonar-scanner"
+                    withEnv(["SONAR_TOKEN=${SONAR_TOKEN}"]) {
+                        sh """
+                            sonar-scanner \
+                              -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                              -Dsonar.sources=. \
+                              -Dsonar.host.url=${SONAR_HOST_URL} \
+                              -Dsonar.login=${SONAR_TOKEN}
+                        """
+                    }
                 }
             }
         }
@@ -108,11 +118,13 @@ spec:
         stage('Login to Nexus') {
             steps {
                 container('dind') {
-                    sh """
-                        docker login ${REGISTRY_HOST} \
-                          -u admin \
-                          -p Changeme@2025
-                    """
+                    withEnv(["DOCKER_HOST=tcp://localhost:2375"]) {
+                        sh """
+                            docker login ${REGISTRY_HOST} \
+                              -u admin \
+                              -p Changeme@2025
+                        """
+                    }
                 }
             }
         }
@@ -120,13 +132,15 @@ spec:
         stage('Push Docker Image') {
             steps {
                 container('dind') {
-                    sh """
-                        docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
-                        docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:latest
+                    withEnv(["DOCKER_HOST=tcp://localhost:2375"]) {
+                        sh """
+                            docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
+                            docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:latest
 
-                        docker push ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
-                        docker push ${REGISTRY}/${APP_NAME}:latest
-                    """
+                            docker push ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
+                            docker push ${REGISTRY}/${APP_NAME}:latest
+                        """
+                    }
                 }
             }
         }
