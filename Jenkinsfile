@@ -11,8 +11,7 @@ spec:
   containers:
   - name: docker
     image: docker:20.10.24
-    command:
-    - cat
+    command: ["cat"]
     tty: true
     volumeMounts:
     - mountPath: /var/run/docker.sock
@@ -20,8 +19,7 @@ spec:
 
   - name: kubectl
     image: bitnami/kubectl:latest
-    command:
-    - cat
+    command: ["cat"]
     tty: true
     securityContext:
       runAsUser: 0
@@ -32,8 +30,7 @@ spec:
 
   - name: sonar-scanner
     image: sonarsource/sonar-scanner-cli
-    command:
-    - cat
+    command: ["cat"]
     tty: true
     volumeMounts:
     - mountPath: /home/jenkins/agent
@@ -55,7 +52,7 @@ spec:
         APP_NAME = "course-recommender"
         GIT_REPO = "https://github.com/shalakabajaj/Course-Recommendation.git"
 
-        REGISTRY_HOST = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
+        REGISTRY_HOST = "nexus.imcc.com:8085"
         REGISTRY_NAMESPACE = "2401007"
         REGISTRY = "${REGISTRY_HOST}/${REGISTRY_NAMESPACE}"
 
@@ -71,8 +68,8 @@ spec:
         stage('Checkout Code') {
             steps {
                 sh """
-                    rm -rf *
-                    git clone ${GIT_REPO} .
+                  rm -rf *
+                  git clone ${GIT_REPO} .
                 """
             }
         }
@@ -81,9 +78,9 @@ spec:
             steps {
                 container('docker') {
                     sh """
-                        docker build --no-cache \
-                          -t ${APP_NAME}:${BUILD_NUMBER} \
-                          -t ${APP_NAME}:latest .
+                      docker build --no-cache \
+                        -t ${APP_NAME}:${BUILD_NUMBER} \
+                        -t ${APP_NAME}:latest .
                     """
                 }
             }
@@ -92,7 +89,12 @@ spec:
         stage('SonarQube Analysis') {
             steps {
                 container('sonar-scanner') {
-                    sh "sonar-scanner"
+                    sh """
+                      sonar-scanner \
+                        -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                        -Dsonar.host.url=${SONAR_HOST_URL} \
+                        -Dsonar.login=${SONAR_TOKEN}
+                    """
                 }
             }
         }
@@ -101,9 +103,9 @@ spec:
             steps {
                 container('docker') {
                     sh """
-                        docker login ${REGISTRY_HOST} \
-                          -u student \
-                          -p Imcc@2025
+                      docker login ${REGISTRY_HOST} \
+                        -u student \
+                        -p 'Imcc@2025'
                     """
                 }
             }
@@ -113,11 +115,11 @@ spec:
             steps {
                 container('docker') {
                     sh """
-                        docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
-                        docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:latest
+                      docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
+                      docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:latest
 
-                        docker push ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
-                        docker push ${REGISTRY}/${APP_NAME}:latest
+                      docker push ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
+                      docker push ${REGISTRY}/${APP_NAME}:latest
                     """
                 }
             }
@@ -127,9 +129,12 @@ spec:
             steps {
                 container('kubectl') {
                     sh """
-                        kubectl apply -f deployment.yaml -n ${NAMESPACE}
-                        kubectl apply -f service.yaml -n ${NAMESPACE}
-                        kubectl rollout status deployment/${APP_NAME} -n ${NAMESPACE}
+                      kubectl get namespace ${NAMESPACE} || kubectl create namespace ${NAMESPACE}
+
+                      kubectl apply -f deployment.yaml -n ${NAMESPACE}
+                      kubectl apply -f service.yaml -n ${NAMESPACE}
+
+                      kubectl rollout status deployment/${APP_NAME} -n ${NAMESPACE}
                     """
                 }
             }
