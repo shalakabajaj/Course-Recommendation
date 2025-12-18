@@ -9,23 +9,13 @@ apiVersion: v1
 kind: Pod
 spec:
   containers:
-
-  - name: dind
-    image: docker:dind
-    securityContext:
-      privileged: true
-    command: ["dockerd-entrypoint.sh"]
-    args:
-      - "--host=tcp://0.0.0.0:2375"
-      - "--insecure-registry=nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
-    env:
-      - name: DOCKER_TLS_CERTDIR
-        value: ""
+  - name: docker
+    image: docker:20.10.24
+    command: ["cat"]
+    tty: true
     volumeMounts:
-      - name: docker-storage
-        mountPath: /var/lib/docker
-      - name: workspace-volume
-        mountPath: /home/jenkins/agent
+    - mountPath: /var/run/docker.sock
+      name: docker-socket
 
   - name: kubectl
     image: bitnami/kubectl:latest
@@ -35,22 +25,23 @@ spec:
       runAsUser: 0
       readOnlyRootFilesystem: false
     volumeMounts:
-      - name: workspace-volume
-        mountPath: /home/jenkins/agent
+    - mountPath: /home/jenkins/agent
+      name: workspace-volume
 
   - name: sonar-scanner
     image: sonarsource/sonar-scanner-cli
     command: ["cat"]
     tty: true
     volumeMounts:
-      - name: workspace-volume
-        mountPath: /home/jenkins/agent
+    - mountPath: /home/jenkins/agent
+      name: workspace-volume
 
   volumes:
-    - name: docker-storage
-      emptyDir: {}
-    - name: workspace-volume
-      emptyDir: {}
+  - name: docker-socket
+    hostPath:
+      path: /var/run/docker.sock
+  - name: workspace-volume
+    emptyDir: {}
 """
         }
     }
@@ -85,7 +76,7 @@ spec:
 
         stage('Build Docker Image') {
             steps {
-                container('dind') {
+                container('docker') {
                     sh """
                       docker build --no-cache \
                         -t ${APP_NAME}:${BUILD_NUMBER} \
@@ -110,7 +101,7 @@ spec:
 
         stage('Login to Nexus') {
             steps {
-                container('dind') {
+                container('docker') {
                     sh """
                       docker login ${REGISTRY_HOST} \
                         -u student \
@@ -122,7 +113,7 @@ spec:
 
         stage('Push Docker Image') {
             steps {
-                container('dind') {
+                container('docker') {
                     sh """
                       docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
                       docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:latest
@@ -138,8 +129,11 @@ spec:
             steps {
                 container('kubectl') {
                     sh """
+                      kubectl get namespace ${NAMESPACE} || kubectl create namespace ${NAMESPACE}
+
                       kubectl apply -f deployment.yaml -n ${NAMESPACE}
                       kubectl apply -f service.yaml -n ${NAMESPACE}
+
                       kubectl rollout status deployment/${APP_NAME} -n ${NAMESPACE}
                     """
                 }
