@@ -16,6 +16,8 @@ spec:
     volumeMounts:
     - mountPath: /var/run/docker.sock
       name: docker-socket
+    - mountPath: /home/jenkins/agent
+      name: workspace-volume
 
   - name: kubectl
     image: bitnami/kubectl:latest
@@ -93,7 +95,7 @@ spec:
                       sonar-scanner \
                         -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
                         -Dsonar.host.url=${SONAR_HOST_URL} \
-                        -Dsonar.login=${SONAR_TOKEN}
+                        -Dsonar.token=${SONAR_TOKEN}
                     """
                 }
             }
@@ -101,9 +103,11 @@ spec:
 
         stage('Login to Nexus') {
             steps {
-                container('dind') {
+                container('docker') {
                     sh """
-                        docker login ${REGISTRY_HOST} -u admin -p Changeme@2025
+                      docker login ${REGISTRY_HOST} \
+                        -u admin \
+                        -p Changeme@2025
                     """
                 }
             }
@@ -114,7 +118,7 @@ spec:
                 container('docker') {
                     sh """
                       docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
-                      docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:latest
+                      docker tag ${APP_NAME}:latest ${REGISTRY}/${APP_NAME}:latest
 
                       docker push ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
                       docker push ${REGISTRY}/${APP_NAME}:latest
