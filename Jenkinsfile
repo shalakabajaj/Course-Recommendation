@@ -131,12 +131,20 @@ spec:
             steps {
                 container('kubectl') {
                     sh """
+                      # Ensure namespace exists
                       kubectl get namespace ${NAMESPACE} || kubectl create namespace ${NAMESPACE}
 
+                      # Apply deployment
                       kubectl apply -f deployment.yaml -n ${NAMESPACE}
+
+                      # Apply service
                       kubectl apply -f service.yaml -n ${NAMESPACE}
 
+                      # Wait for deployment to be ready
                       kubectl rollout status deployment/${APP_NAME} -n ${NAMESPACE}
+
+                      # Check service status
+                      kubectl get svc -n ${NAMESPACE}
                     """
                 }
             }
