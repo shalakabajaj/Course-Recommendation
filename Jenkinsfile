@@ -101,11 +101,9 @@ spec:
 
         stage('Login to Nexus') {
             steps {
-                container('docker') {
+                container('dind') {
                     sh """
-                      docker login ${REGISTRY_HOST} \
-                        -u student \
-                        -p Imcc@2025
+                        docker login ${REGISTRY_HOST} -u admin -p Changeme@2025
                     """
                 }
             }
