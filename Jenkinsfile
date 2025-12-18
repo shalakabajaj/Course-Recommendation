@@ -1,8 +1,9 @@
+properties([pipelineTriggers([]), durabilityHint('PERFORMANCE_OPTIMIZED')])
+
 pipeline {
+
     agent {
         kubernetes {
-            label 'course-recommender-pod'
-            defaultContainer 'jnlp'
             yaml """
 apiVersion: v1
 kind: Pod
@@ -16,16 +17,19 @@ spec:
     volumeMounts:
     - mountPath: /var/run/docker.sock
       name: docker-socket
-    - mountPath: /home/jenkins/agent
-      name: workspace-volume
+
   - name: kubectl
     image: bitnami/kubectl:latest
     command:
     - cat
     tty: true
+    securityContext:
+      runAsUser: 0
+      readOnlyRootFilesystem: false
     volumeMounts:
     - mountPath: /home/jenkins/agent
       name: workspace-volume
+
   - name: sonar-scanner
     image: sonarsource/sonar-scanner-cli
     command:
@@ -34,31 +38,42 @@ spec:
     volumeMounts:
     - mountPath: /home/jenkins/agent
       name: workspace-volume
+
   volumes:
-  - name: workspace-volume
-    emptyDir: {}
   - name: docker-socket
     hostPath:
       path: /var/run/docker.sock
+  - name: workspace-volume
+    emptyDir: {}
 """
         }
     }
 
+    options { skipDefaultCheckout() }
+
     environment {
-        DOCKER_IMAGE = "course-recommender"
-        DOCKER_TAG = "latest"
-        NEXUS_URL = "nexus.example.com"  // <-- replace with your Nexus URL
-        NEXUS_REPO = "docker-repo"       // <-- replace with your Nexus repository
-        SONAR_TOKEN = credentials('sonar-token')  // Jenkins credential ID
-        NEXUS_CRED = credentials('nexus-cred')    // Jenkins credential ID
-        KUBE_CONFIG = credentials('kubeconfig')   // Jenkins credential ID (optional)
+        APP_NAME = "course-recommender"
+        GIT_REPO = "https://github.com/shalakabajaj/Course-Recommendation.git"
+
+        REGISTRY_HOST = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
+        REGISTRY_NAMESPACE = "2401007"
+        REGISTRY = "${REGISTRY_HOST}/${REGISTRY_NAMESPACE}"
+
+        NAMESPACE = "2401007"
+
+        SONAR_PROJECT_KEY = "2401007_Course_Recommendation_System"
+        SONAR_HOST_URL = "http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000"
+        SONAR_TOKEN = "sqp_e660f7a442e917c6a49c5b81f0506e1f52c4e61e"
     }
 
     stages {
+
         stage('Checkout Code') {
             steps {
-                deleteDir()
-                git url: 'https://github.com/shalakabajaj/Course-Recommendation.git'
+                sh """
+                    rm -rf *
+                    git clone ${GIT_REPO} .
+                """
             }
         }
 
@@ -66,7 +81,9 @@ spec:
             steps {
                 container('docker') {
                     sh """
-                    docker build --no-cache -t $DOCKER_IMAGE:$DOCKER_TAG .
+                        docker build --no-cache \
+                          -t ${APP_NAME}:${BUILD_NUMBER} \
+                          -t ${APP_NAME}:latest .
                     """
                 }
             }
@@ -75,24 +92,32 @@ spec:
         stage('SonarQube Analysis') {
             steps {
                 container('sonar-scanner') {
+                    sh "sonar-scanner"
+                }
+            }
+        }
+
+        stage('Login to Nexus') {
+            steps {
+                container('docker') {
                     sh """
-                    sonar-scanner \
-                      -Dsonar.projectKey=2401007_Course_Recommendation_System \
-                      -Dsonar.sources=. \
-                      -Dsonar.host.url=http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000 \
-                      -Dsonar.login=$SONAR_TOKEN
+                        docker login ${REGISTRY_HOST} \
+                          -u admin \
+                          -p Changeme@2025
                     """
                 }
             }
         }
 
-        stage('Login to Nexus & Push Docker Image') {
+        stage('Push Docker Image') {
             steps {
                 container('docker') {
                     sh """
-                    echo $NEXUS_CRED_PSW | docker login $NEXUS_URL -u $NEXUS_CRED_USR --password-stdin
-                    docker tag $DOCKER_IMAGE:$DOCKER_TAG $NEXUS_URL/$NEXUS_REPO/$DOCKER_IMAGE:$DOCKER_TAG
-                    docker push $NEXUS_URL/$NEXUS_REPO/$DOCKER_IMAGE:$DOCKER_TAG
+                        docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
+                        docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:latest
+
+                        docker push ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
+                        docker push ${REGISTRY}/${APP_NAME}:latest
                     """
                 }
             }
@@ -102,7 +127,9 @@ spec:
             steps {
                 container('kubectl') {
                     sh """
-                    kubectl apply -f k8s/service.yaml
+                        kubectl apply -f deployment.yaml -n ${NAMESPACE}
+                        kubectl apply -f service.yaml -n ${NAMESPACE}
+                        kubectl rollout status deployment/${APP_NAME} -n ${NAMESPACE}
                     """
                 }
             }
@@ -110,15 +137,8 @@ spec:
     }
 
     post {
-        always {
-            echo 'Cleaning up workspace...'
-            cleanWs()
-        }
-        success {
-            echo 'Pipeline completed successfully!'
-        }
-        failure {
-            echo 'Pipeline failed.'
-        }
+        success { echo "🎉 Course Recommendation CI/CD Pipeline SUCCESS" }
+        failure { echo "❌ Course Recommendation CI/CD Pipeline FAILED" }
+        always  { echo "🔁 Pipeline Finished" }
     }
 }
