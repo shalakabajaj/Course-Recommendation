@@ -103,7 +103,7 @@ spec:
                     sh """
                         docker login ${REGISTRY_HOST} \
                           -u admin \
-                          -p Changeme@2025
+                          -p Imcc@2025
                     """
                 }
             }
