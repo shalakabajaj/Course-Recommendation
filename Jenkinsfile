@@ -102,7 +102,7 @@ spec:
                 container('docker') {
                     sh """
                         docker login ${REGISTRY_HOST} \
-                          -u admin \
+                          -u student \
                           -p Imcc@2025
                     """
                 }
