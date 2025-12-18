@@ -1,7 +1,4 @@
-properties([
-  pipelineTriggers([]),
-  durabilityHint('PERFORMANCE_OPTIMIZED')
-])
+properties([pipelineTriggers([]), durabilityHint('PERFORMANCE_OPTIMIZED')])
 
 pipeline {
 
@@ -12,47 +9,42 @@ apiVersion: v1
 kind: Pod
 spec:
   containers:
-
-  - name: dind
-    image: docker:dind
-    securityContext:
-      privileged: true
-    command: ["dockerd-entrypoint.sh"]
-    args:
-      - "--host=tcp://0.0.0.0:2375"
-    env:
-      - name: DOCKER_TLS_CERTDIR
-        value: ""
-    volumeMounts:
-      - name: docker-storage
-        mountPath: /var/lib/docker
-      - name: workspace-volume
-        mountPath: /home/jenkins/agent
-
-  - name: sonar-scanner
-    image: sonarsource/sonar-scanner-cli
-    command: ["cat"]
+  - name: docker
+    image: docker:20.10.24
+    command:
+    - cat
     tty: true
     volumeMounts:
-      - name: workspace-volume
-        mountPath: /home/jenkins/agent
+    - mountPath: /var/run/docker.sock
+      name: docker-socket
 
   - name: kubectl
     image: bitnami/kubectl:latest
-    command: ["cat"]
+    command:
+    - cat
     tty: true
     securityContext:
       runAsUser: 0
       readOnlyRootFilesystem: false
     volumeMounts:
-      - name: workspace-volume
-        mountPath: /home/jenkins/agent
+    - mountPath: /home/jenkins/agent
+      name: workspace-volume
+
+  - name: sonar-scanner
+    image: sonarsource/sonar-scanner-cli
+    command:
+    - cat
+    tty: true
+    volumeMounts:
+    - mountPath: /home/jenkins/agent
+      name: workspace-volume
 
   volumes:
-    - name: docker-storage
-      emptyDir: {}
-    - name: workspace-volume
-      emptyDir: {}
+  - name: docker-socket
+    hostPath:
+      path: /var/run/docker.sock
+  - name: workspace-volume
+    emptyDir: {}
 """
         }
     }
@@ -87,14 +79,12 @@ spec:
 
         stage('Build Docker Image') {
             steps {
-                container('dind') {
-                    withEnv(["DOCKER_HOST=tcp://localhost:2375"]) {
-                        sh """
-                            docker build --no-cache \
-                              -t ${APP_NAME}:${BUILD_NUMBER} \
-                              -t ${APP_NAME}:latest .
-                        """
-                    }
+                container('docker') {
+                    sh """
+                        docker build --no-cache \
+                          -t ${APP_NAME}:${BUILD_NUMBER} \
+                          -t ${APP_NAME}:latest .
+                    """
                 }
             }
         }
@@ -102,45 +92,33 @@ spec:
         stage('SonarQube Analysis') {
             steps {
                 container('sonar-scanner') {
-                    withEnv(["SONAR_TOKEN=${SONAR_TOKEN}"]) {
-                        sh """
-                            sonar-scanner \
-                              -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                              -Dsonar.sources=. \
-                              -Dsonar.host.url=${SONAR_HOST_URL} \
-                              -Dsonar.login=${SONAR_TOKEN}
-                        """
-                    }
+                    sh "sonar-scanner"
                 }
             }
         }
 
         stage('Login to Nexus') {
             steps {
-                container('dind') {
-                    withEnv(["DOCKER_HOST=tcp://localhost:2375"]) {
-                        sh """
-                            docker login ${REGISTRY_HOST} \
-                              -u admin \
-                              -p Changeme@2025
-                        """
-                    }
+                container('docker') {
+                    sh """
+                        docker login ${REGISTRY_HOST} \
+                          -u admin \
+                          -p Changeme@2025
+                    """
                 }
             }
         }
 
         stage('Push Docker Image') {
             steps {
-                container('dind') {
-                    withEnv(["DOCKER_HOST=tcp://localhost:2375"]) {
-                        sh """
-                            docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
-                            docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:latest
+                container('docker') {
+                    sh """
+                        docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
+                        docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:latest
 
-                            docker push ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
-                            docker push ${REGISTRY}/${APP_NAME}:latest
-                        """
-                    }
+                        docker push ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
+                        docker push ${REGISTRY}/${APP_NAME}:latest
+                    """
                 }
             }
         }
@@ -151,7 +129,7 @@ spec:
                     sh """
                         kubectl apply -f deployment.yaml -n ${NAMESPACE}
                         kubectl apply -f service.yaml -n ${NAMESPACE}
-                        kubectl rollout status deployment/course-recommender -n ${NAMESPACE}
+                        kubectl rollout status deployment/${APP_NAME} -n ${NAMESPACE}
                     """
                 }
             }
