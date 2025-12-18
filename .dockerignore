@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 venv/
 __pycache__/
 *.pyc
@@ -9,3 +10,16 @@ __pycache__/
 .idea
 .vscode
 .ipynb_checkpoints
+=======
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.git
+.gitignore
+.idea
+.vscode
+.ipynb_checkpoints
+>>>>>>> 595238ae967a102fcfd57d89b01e63f84e5cac68
