@@ -83,7 +83,7 @@ spec:
         stage('SonarQube Analysis') {
             steps {
                 container('sonar-scanner') {
-                    withCredentials([string(credentialsId: 'sonar-token-2401007', variable: 'SONAR_TOKEN')]) {
+                    withCredentials([string(credentialsId: '2401007_Course_Recommendation_System', variable: 'SONAR_TOKEN')]) {
                         sh '''
                             sonar-scanner \
                                 -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
@@ -96,7 +96,15 @@ spec:
                 }
             }
         }
-
+        stage('Login to Docker Registry') {
+            steps {
+                container('dind') {
+                    sh 'docker --version'
+                    sh 'sleep 10'
+                    sh 'docker login nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085 -u student -p Imcc@2025'
+                }
+            }
+        }
         stage('Login to Nexus') {
             steps {
                 container('dind') {
