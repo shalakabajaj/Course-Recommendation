@@ -1,23 +1,15 @@
-properties([pipelineTriggers([]), durabilityHint('PERFORMANCE_OPTIMIZED')])
-
 pipeline {
-
     agent {
         kubernetes {
-            yaml """
+            yaml '''
 apiVersion: v1
 kind: Pod
 spec:
   containers:
-  - name: docker
-    image: docker:20.10.24
+  - name: sonar-scanner
+    image: sonarsource/sonar-scanner-cli
     command: ["cat"]
     tty: true
-    volumeMounts:
-    - mountPath: /var/run/docker.sock
-      name: docker-socket
-    - mountPath: /home/jenkins/agent
-      name: workspace-volume
 
   - name: kubectl
     image: bitnami/kubectl:latest
@@ -26,29 +18,36 @@ spec:
     securityContext:
       runAsUser: 0
       readOnlyRootFilesystem: false
+    env:
+    - name: KUBECONFIG
+      value: /kube/config
     volumeMounts:
-    - mountPath: /home/jenkins/agent
-      name: workspace-volume
+    - name: kubeconfig-secret
+      mountPath: /kube/config
+      subPath: kubeconfig
 
-  - name: sonar-scanner
-    image: sonarsource/sonar-scanner-cli
-    command: ["cat"]
-    tty: true
+  - name: dind
+    image: docker:dind
+    securityContext:
+      privileged: true
+    env:
+    - name: DOCKER_TLS_CERTDIR
+      value: ""
     volumeMounts:
-    - mountPath: /home/jenkins/agent
-      name: workspace-volume
+    - name: docker-config
+      mountPath: /etc/docker/daemon.json
+      subPath: daemon.json
 
   volumes:
-  - name: docker-socket
-    hostPath:
-      path: /var/run/docker.sock
-  - name: workspace-volume
-    emptyDir: {}
-"""
+  - name: docker-config
+    configMap:
+      name: docker-daemon-config
+  - name: kubeconfig-secret
+    secret:
+      secretName: kubeconfig-secret
+'''
         }
     }
-
-    options { skipDefaultCheckout() }
 
     environment {
         APP_NAME = "course-recommender"
@@ -69,21 +68,21 @@ spec:
 
         stage('Checkout Code') {
             steps {
-                sh """
-                  rm -rf *
-                  git clone ${GIT_REPO} .
-                """
+                sh '''
+                    rm -rf *
+                    git clone ${GIT_REPO} .
+                '''
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                container('docker') {
-                    sh """
-                      docker build --no-cache \
-                        -t ${APP_NAME}:${BUILD_NUMBER} \
-                        -t ${APP_NAME}:latest .
-                    """
+                container('dind') {
+                    sh '''
+                        sleep 15
+                        docker build -t ${APP_NAME}:latest .
+                        docker image ls
+                    '''
                 }
             }
         }
@@ -91,38 +90,37 @@ spec:
         stage('SonarQube Analysis') {
             steps {
                 container('sonar-scanner') {
-                    sh """
-                      sonar-scanner \
-                        -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                        -Dsonar.host.url=${SONAR_HOST_URL} \
-                        -Dsonar.token=${SONAR_TOKEN}
-                    """
+                    withCredentials([string(credentialsId: 'sonar-token-2401007', variable: 'SONAR_TOKEN')]) {
+                        sh '''
+                            sonar-scanner \
+                                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                                -Dsonar.host.url=${SONAR_HOST_URL} \
+                                -Dsonar.login=$SONAR_TOKEN \
+                                -Dsonar.sources=. \
+                                -Dsonar.python.version=3.10
+                        '''
+                    }
                 }
             }
         }
 
         stage('Login to Nexus') {
             steps {
-                container('docker') {
-                    sh """
-                      docker login ${REGISTRY_HOST} \
-                        -u admin \
-                        -p Changeme@2025
-                    """
+                container('dind') {
+                    sh '''
+                        docker login ${REGISTRY_HOST} -u admin -p Changeme@2025
+                    '''
                 }
             }
         }
 
-        stage('Push Docker Image') {
+        stage('Build - Tag - Push Docker Image') {
             steps {
-                container('docker') {
-                    sh """
-                      docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
-                      docker tag ${APP_NAME}:latest ${REGISTRY}/${APP_NAME}:latest
-
-                      docker push ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
-                      docker push ${REGISTRY}/${APP_NAME}:latest
-                    """
+                container('dind') {
+                    sh '''
+                        docker tag ${APP_NAME}:latest ${REGISTRY}/${APP_NAME}:latest
+                        docker push ${REGISTRY}/${APP_NAME}:latest
+                    '''
                 }
             }
         }
@@ -130,25 +128,43 @@ spec:
         stage('Deploy to Kubernetes') {
             steps {
                 container('kubectl') {
+                    script {
+                        dir('k8s') {
+                            sh """
+                            # Ensure namespace exists
+                            kubectl get namespace ${NAMESPACE} || kubectl create namespace ${NAMESPACE}
+
+                            # Apply deployment & service
+                            kubectl apply -f deployment.yaml -n ${NAMESPACE}
+                            kubectl apply -f service.yaml -n ${NAMESPACE}
+
+                            # Force rollout
+                            kubectl delete pod -l app=${APP_NAME} -n ${NAMESPACE} || true
+                            kubectl rollout status deployment/${APP_NAME} -n ${NAMESPACE}
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Debug Kubernetes State') {
+            steps {
+                container('kubectl') {
                     sh """
-                      # Ensure namespace exists
-                      kubectl get namespace ${NAMESPACE} || kubectl create namespace ${NAMESPACE}
+                    echo "========== PODS =========="
+                    kubectl get pods -n ${NAMESPACE}
 
-                      # Apply deployment
-                      kubectl apply -f deployment.yaml -n ${NAMESPACE}
+                    echo "========== SERVICES =========="
+                    kubectl get svc -n ${NAMESPACE}
 
-                      # Apply service
-                      kubectl apply -f service.yaml -n ${NAMESPACE}
-
-                      # Wait for deployment to be ready
-                      kubectl rollout status deployment/${APP_NAME} -n ${NAMESPACE}
-
-                      # Check service status
-                      kubectl get svc -n ${NAMESPACE}
+                    echo "========== POD LOGS =========="
+                    kubectl logs -l app=${APP_NAME} -n ${NAMESPACE} || true
                     """
                 }
             }
         }
+
     }
 
     post {
