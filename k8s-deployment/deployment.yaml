@@ -19,9 +19,13 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8501
+
           command: ["streamlit"]
           args:
-            ["run", "frontend_ui.py", "--server.port=8501", "--server.address=0.0.0.0"]
+            - "run"
+            - "frontend_ui.py"
+            - "--server.port=8501"
+            - "--server.address=0.0.0.0"
 
           readinessProbe:
             httpGet:
