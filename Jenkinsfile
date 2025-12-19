@@ -57,7 +57,7 @@ spec:
         REGISTRY = "${REGISTRY_HOST}/${REGISTRY_NAMESPACE}"
         NAMESPACE = "2401007"
         SONAR_PROJECT_KEY = "2401007_Course_Recommendation_System"
-        SONAR_HOST_URL = "http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000"
+        SONAR_HOST_URL = "http://my-sonarqube-sonarqube.sonarqube.sonarqube.svc.cluster.local:9000"
     }
 
     stages {
@@ -66,7 +66,7 @@ spec:
             steps {
                 container('dind') {
                     sh '''
-                        sleep 15
+                        set -e
                         docker build -t ${APP_NAME}:latest .
                         docker image ls
                     '''
@@ -79,6 +79,7 @@ spec:
                 container('sonar-scanner') {
                     withCredentials([string(credentialsId: '2401007_Course_Recommendation_System', variable: 'SONAR_TOKEN')]) {
                         sh '''
+                            set -e
                             sonar-scanner \
                                 -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
                                 -Dsonar.host.url=${SONAR_HOST_URL} \
@@ -90,18 +91,28 @@ spec:
             }
         }
 
-        stage('Docker Login & Push') {
+        stage('Login to Docker Registry') {
             steps {
                 container('dind') {
-                    withCredentials([
-                        usernamePassword(credentialsId: 'nexus-docker-cred', usernameVariable: 'USER', passwordVariable: 'PASS')
-                    ]) {
-                        sh '''
-                            docker login ${REGISTRY_HOST} -u $USER -p $PASS
-                            docker tag ${APP_NAME}:latest ${REGISTRY}/${APP_NAME}:latest
-                            docker push ${REGISTRY}/${APP_NAME}:latest
-                        '''
-                    }
+                    sh '''
+                        set -e
+                        docker --version
+                        docker login ${REGISTRY_HOST} -u student -p Imcc@2025
+                    '''
+                }
+            }
+        }
+
+        stage('Build - Tag - Push') {
+            steps {
+                container('dind') {
+                    sh '''
+                        set -e
+                        docker tag ${APP_NAME}:latest ${REGISTRY}/${APP_NAME}:latest
+                        docker push ${REGISTRY}/${APP_NAME}:latest
+                        docker pull ${REGISTRY}/${APP_NAME}:latest
+                        docker image ls
+                    '''
                 }
             }
         }
@@ -110,21 +121,22 @@ spec:
             steps {
                 container('kubectl') {
                     script {
-                        dir('k8s') {
-                            sh """
-                            # Ensure namespace exists
-                            kubectl get namespace ${NAMESPACE} || kubectl create namespace ${NAMESPACE}
+                        dir('k8s-deployment') {
+                            sh '''
+                                set -e
+                                # Ensure namespace exists
+                                kubectl get namespace ${NAMESPACE} || kubectl create namespace ${NAMESPACE}
 
-                            # Apply deployment & service
-                            kubectl apply -f deployment.yaml -n ${NAMESPACE}
-                            kubectl apply -f service.yaml -n ${NAMESPACE}
+                                # Apply deployment & service
+                                kubectl apply -f deployment.yaml -n ${NAMESPACE}
+                                kubectl apply -f service.yaml -n ${NAMESPACE}
 
-                            # Restart deployment to pick new image
-                            kubectl rollout restart deployment/${APP_NAME} -n ${NAMESPACE}
+                                # Restart deployment to pick new image
+                                kubectl rollout restart deployment/${APP_NAME} -n ${NAMESPACE}
 
-                            # Wait until deployment is ready
-                            kubectl rollout status deployment/${APP_NAME} -n ${NAMESPACE}
-                            """
+                                # Wait until deployment is ready
+                                kubectl rollout status deployment/${APP_NAME} -n ${NAMESPACE}
+                            '''
                         }
                     }
                 }
@@ -134,16 +146,16 @@ spec:
         stage('Debug Kubernetes State') {
             steps {
                 container('kubectl') {
-                    sh """
-                    echo "========== PODS =========="
-                    kubectl get pods -n ${NAMESPACE}
+                    sh '''
+                        echo "========== PODS =========="
+                        kubectl get pods -n ${NAMESPACE}
 
-                    echo "========== SERVICES =========="
-                    kubectl get svc -n ${NAMESPACE}
+                        echo "========== SERVICES =========="
+                        kubectl get svc -n ${NAMESPACE}
 
-                    echo "========== POD LOGS =========="
-                    kubectl logs -l app=${APP_NAME} -n ${NAMESPACE} || true
-                    """
+                        echo "========== POD LOGS =========="
+                        kubectl logs -l app=${APP_NAME} -n ${NAMESPACE} || true
+                    '''
                 }
             }
         }
