@@ -101,8 +101,8 @@ spec:
                 container('docker') {
                     sh '''
                       docker login nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085 \
-                        -u student \
-                        -p Imcc@2025
+                        -u admin \
+                        -p 2401007@imcc
                     '''
                 }
             }
