@@ -8,7 +8,6 @@ spec:
   selector:
     app: course-recommender
   ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 8501
-      nodePort: 30007
+  - port: 80
+    targetPort: 8501
+    nodePort: 30007

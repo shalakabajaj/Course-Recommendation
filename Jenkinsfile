@@ -58,55 +58,52 @@ spec:
 
         NAMESPACE = "2401007"
 
-        SONAR_PROJECT_KEY = "2401007_Course_Recommendation_System"
         SONAR_HOST_URL = "http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000"
-        SONAR_TOKEN = "sqp_e660f7a442e917c6a49c5b81f0506e1f52c4e61e"
     }
 
     stages {
 
         stage('Checkout Code') {
             steps {
-                sh """
+                sh '''
                   rm -rf *
-                  git clone ${GIT_REPO} .
-                """
+                  git clone https://github.com/shalakabajaj/Course-Recommendation.git .
+                '''
             }
         }
 
         stage('Build Docker Image') {
             steps {
                 container('docker') {
-                    sh """
+                    sh '''
                       docker build --no-cache \
-                        -t ${APP_NAME}:${BUILD_NUMBER} \
-                        -t ${APP_NAME}:latest .
-                    """
+                        -t course-recommender:${BUILD_NUMBER} \
+                        -t course-recommender:latest .
+                    '''
                 }
             }
         }
 
         stage('SonarQube Analysis') {
-        steps {
-            container('sonar-scanner') {
-                sh """
-                    sonar-scanner \
-                    -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                    -Dsonar.host.url=${SONAR_HOST_URL}
-                """
+            steps {
+                container('sonar-scanner') {
+                    sh '''
+                      sonar-scanner \
+                        -Dsonar.host.url=http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000 \
+                        -Dsonar.projectBaseDir=/home/jenkins/agent/workspace/2401007
+                    '''
                 }
             }
         }
 
-
         stage('Login to Nexus') {
             steps {
                 container('docker') {
-                    sh """
-                      docker login ${REGISTRY_HOST} \
+                    sh '''
+                      docker login nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085 \
                         -u student \
                         -p Imcc@2025
-                    """
+                    '''
                 }
             }
         }
@@ -114,13 +111,13 @@ spec:
         stage('Push Docker Image') {
             steps {
                 container('docker') {
-                    sh """
-                      docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
-                      docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:latest
+                    sh '''
+                      docker tag course-recommender:${BUILD_NUMBER} nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401007/course-recommender:${BUILD_NUMBER}
+                      docker tag course-recommender:${BUILD_NUMBER} nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401007/course-recommender:latest
 
-                      docker push ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
-                      docker push ${REGISTRY}/${APP_NAME}:latest
-                    """
+                      docker push nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401007/course-recommender:${BUILD_NUMBER}
+                      docker push nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401007/course-recommender:latest
+                    '''
                 }
             }
         }
@@ -128,14 +125,11 @@ spec:
         stage('Deploy to Kubernetes') {
             steps {
                 container('kubectl') {
-                    sh """
-                      kubectl get namespace ${NAMESPACE} || kubectl create namespace ${NAMESPACE}
-
-                      kubectl apply -f deployment.yaml -n ${NAMESPACE}
-                      kubectl apply -f service.yaml -n ${NAMESPACE}
-
-                      kubectl rollout status deployment/${APP_NAME} -n ${NAMESPACE}
-                    """
+                    sh '''
+                      kubectl apply -f deployment.yaml -n 2401007
+                      kubectl apply -f service.yaml -n 2401007
+                      kubectl rollout status deployment/course-recommender -n 2401007
+                    '''
                 }
             }
         }
