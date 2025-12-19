@@ -54,7 +54,7 @@ spec:
         APP_NAME = "course-recommender"
         GIT_REPO = "https://github.com/shalakabajaj/Course-Recommendation.git"
 
-        REGISTRY_HOST = "nexus.imcc.com"
+        REGISTRY_HOST = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
         REGISTRY_NAMESPACE = "2401007"
         REGISTRY = "${REGISTRY_HOST}/${REGISTRY_NAMESPACE}"
 
