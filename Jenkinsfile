@@ -69,7 +69,7 @@ spec:
 
     // SonarQube
     SONAR_HOST_URL = "http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000"
-    SONAR_PROJECT_KEY = "2401007_course_recommender"
+    SONAR_PROJECT_KEY = "2401007_Course_Recommendation_System"
   }
 
   stages {
@@ -83,7 +83,7 @@ spec:
     stage('SonarQube Analysis') {
       steps {
         container('sonar-scanner') {
-          withCredentials([string(credentialsId: '2401007_Course_Recommendation_System', variable: 'SONAR_TOKEN')]) {
+          withCredentials([string(credentialsId: 'jenkins-course-recommender', variable: 'SONAR_TOKEN')]) {
             sh """
               sonar-scanner \
                 -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
