@@ -1,15 +1,3 @@
-# -------------------------------
-# Namespace
-# -------------------------------
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: 2401007
-
----
-# -------------------------------
-# Deployment
-# -------------------------------
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -27,49 +15,32 @@ spec:
     spec:
       containers:
         - name: course-recommender
-          # Use internal Nexus registry (update the port if different)
-          image: nexus.2401007.svc.cluster.local:8085/2401007/course-recommender:latest
+          image: nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401007/course-recommender:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8501
           command: ["streamlit"]
           args:
             ["run", "frontend_ui.py", "--server.port=8501", "--server.address=0.0.0.0"]
+
           readinessProbe:
             httpGet:
               path: /
               port: 8501
-            initialDelaySeconds: 10
+            initialDelaySeconds: 20
             periodSeconds: 10
+
           livenessProbe:
             httpGet:
               path: /
               port: 8501
-            initialDelaySeconds: 30
+            initialDelaySeconds: 40
             periodSeconds: 20
+
           resources:
             requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
               cpu: "500m"
               memory: "1Gi"
-            limits:
-              cpu: "1"
-              memory: "2Gi"
-
----
-# -------------------------------
-# Service
-# -------------------------------
-apiVersion: v1
-kind: Service
-metadata:
-  name: course-recommender-service
-  namespace: 2401007
-spec:
-  selector:
-    app: course-recommender
-  ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 8501
-  type: NodePort
-  nodePort: 30007
