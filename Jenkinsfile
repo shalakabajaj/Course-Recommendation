@@ -30,6 +30,14 @@ spec:
       - name: workspace-volume
         mountPath: /home/jenkins/agent
 
+  - name: sonar-scanner
+    image: sonarsource/sonar-scanner-cli:latest
+    command: ["cat"]
+    tty: true
+    volumeMounts:
+      - name: workspace-volume
+        mountPath: /home/jenkins/agent
+
   - name: kubectl
     image: bitnami/kubectl:latest
     command: ["cat"]
@@ -58,13 +66,33 @@ spec:
     NAMESPACE     = "2401007"
     IMAGE_TAG     = "${BUILD_NUMBER}"
     DOCKER_HOST   = "tcp://localhost:2375"
+
+    // SonarQube
+    SONAR_HOST_URL = "http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000"
+    SONAR_PROJECT_KEY = "2401007_course_recommender"
   }
 
   stages {
 
     stage('Checkout Code') {
       steps {
-        git url: 'https://github.com/shalakabajaj/Course-Recommendator.git', branch: 'main'
+        git url: 'https://github.com/shalakabajaj/Course-Recommendation.git', branch: 'main'
+      }
+    }
+
+    stage('SonarQube Analysis') {
+      steps {
+        container('sonar-scanner') {
+          withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+            sh """
+              sonar-scanner \
+                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                -Dsonar.sources=. \
+                -Dsonar.host.url=${SONAR_HOST_URL} \
+                -Dsonar.token=${SONAR_TOKEN}
+            """
+          }
+        }
       }
     }
 
