@@ -1,118 +1,103 @@
 pipeline {
     agent {
         kubernetes {
-            yaml '''
+            label 'course-recommender-agent'
+            defaultContainer 'jnlp'
+            yaml """
 apiVersion: v1
 kind: Pod
+metadata:
+  labels:
+    some-label: course-recommender
 spec:
   containers:
-  - name: sonar-scanner
-    image: sonarsource/sonar-scanner-cli
-    command: ["cat"]
-    tty: true
-
-  - name: kubectl
-    image: bitnami/kubectl:latest
-    command: ["cat"]
-    tty: true
-    securityContext:
-      runAsUser: 0
-      readOnlyRootFilesystem: false
-    env:
-    - name: KUBECONFIG
-      value: /kube/config
-    volumeMounts:
-    - name: kubeconfig-secret
-      mountPath: /kube/config
-      subPath: kubeconfig
-
   - name: dind
     image: docker:dind
     securityContext:
       privileged: true
-    env:
-    - name: DOCKER_TLS_CERTDIR
-      value: ""
     volumeMounts:
     - name: docker-config
       mountPath: /etc/docker/daemon.json
       subPath: daemon.json
-
+    - name: workspace-volume
+      mountPath: /home/jenkins/agent
+  - name: kubectl
+    image: bitnami/kubectl:1.30.0   # ✅ Fixed specific version
+    command:
+      - cat
+    tty: true
+    env:
+      - name: KUBECONFIG
+        value: /kube/config
+    volumeMounts:
+      - name: kubeconfig-secret
+        mountPath: /kube/config
+        subPath: kubeconfig
+      - name: workspace-volume
+        mountPath: /home/jenkins/agent
+  - name: sonar-scanner
+    image: sonarsource/sonar-scanner-cli
+    command:
+      - cat
+    tty: true
+    volumeMounts:
+      - name: workspace-volume
+        mountPath: /home/jenkins/agent
+  - name: jnlp
+    image: jenkins/inbound-agent:3345.v03dee9b_f88fc-1
+    env:
+      - name: JENKINS_SECRET
+        value: "\${JENKINS_SECRET}"
+      - name: JENKINS_TUNNEL
+        value: "my-jenkins-agent.jenkins.svc.cluster.local:50000"
+    volumeMounts:
+      - name: workspace-volume
+        mountPath: /home/jenkins/agent
   volumes:
-  - name: docker-config
-    configMap:
-      name: docker-daemon-config
-  - name: kubeconfig-secret
-    secret:
-      secretName: kubeconfig-secret
-'''
+    - name: docker-config
+      configMap:
+        name: docker-daemon-config
+    - name: workspace-volume
+      emptyDir: {}
+    - name: kubeconfig-secret
+      secret:
+        secretName: kubeconfig-secret
+"""
         }
     }
 
     environment {
-        APP_NAME = "course-recommender"
-        GIT_REPO = "https://github.com/shalakabajaj/Course-Recommendation.git"
-        REGISTRY_HOST = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
-        REGISTRY_NAMESPACE = "2401007"
-        REGISTRY = "${REGISTRY_HOST}/${REGISTRY_NAMESPACE}"
-        NAMESPACE = "2401007"
-        SONAR_PROJECT_KEY = "2401007_Course_Recommendation_System"
-        SONAR_HOST_URL = "http://my-sonarqube-sonarqube.sonarqube.sonarqube.svc.cluster.local:9000"
+        IMAGE_NAME = 'course-recommender:latest'
     }
 
     stages {
+        stage('Checkout SCM') {
+            steps {
+                checkout scm
+            }
+        }
 
         stage('Build Docker Image') {
             steps {
                 container('dind') {
                     sh '''
-                        set -e
-                        docker build -t ${APP_NAME}:latest .
-                        docker image ls
+                    set -e
+                    docker build -t $IMAGE_NAME .
                     '''
                 }
             }
         }
 
-        stage('SonarQube Analysis') {
+        stage('Push Docker Image') {
             steps {
-                container('sonar-scanner') {
-                    withCredentials([string(credentialsId: '2401007_Course_Recommendation_System', variable: 'SONAR_TOKEN')]) {
+                container('dind') {
+                    withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                         sh '''
-                            set -e
-                            sonar-scanner \
-                                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                                -Dsonar.host.url=${SONAR_HOST_URL} \
-                                -Dsonar.login=$SONAR_TOKEN \
-                                -Dsonar.sources=.
+                        echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                        docker tag $IMAGE_NAME $DOCKER_USER/$IMAGE_NAME
+                        docker push $DOCKER_USER/$IMAGE_NAME
                         '''
                     }
-                }
-            }
-        }
-
-        stage('Login to Docker Registry') {
-            steps {
-                container('dind') {
-                    sh '''
-                        set -e
-                        docker --version
-                        docker login ${REGISTRY_HOST} -u student -p Imcc@2025
-                    '''
-                }
-            }
-        }
-
-        stage('Build - Tag - Push') {
-            steps {
-                container('dind') {
-                    sh '''
-                        set -e
-                        docker tag ${APP_NAME}:latest ${REGISTRY}/${APP_NAME}:latest
-                        docker push ${REGISTRY}/${APP_NAME}:latest
-                        docker pull ${REGISTRY}/${APP_NAME}:latest
-                        docker image ls
-                    '''
                 }
             }
         }
@@ -120,51 +105,21 @@ spec:
         stage('Deploy to Kubernetes') {
             steps {
                 container('kubectl') {
-                    script {
-                        dir('k8s-deployment') {
-                            sh '''
-                                set -e
-                                # Ensure namespace exists
-                                kubectl get namespace ${NAMESPACE} || kubectl create namespace ${NAMESPACE}
-
-                                # Apply deployment & service
-                                kubectl apply -f deployment.yaml -n ${NAMESPACE}
-                                kubectl apply -f service.yaml -n ${NAMESPACE}
-
-                                # Restart deployment to pick new image
-                                kubectl rollout restart deployment/${APP_NAME} -n ${NAMESPACE}
-
-                                # Wait until deployment is ready
-                                kubectl rollout status deployment/${APP_NAME} -n ${NAMESPACE}
-                            '''
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Debug Kubernetes State') {
-            steps {
-                container('kubectl') {
                     sh '''
-                        echo "========== PODS =========="
-                        kubectl get pods -n ${NAMESPACE}
-
-                        echo "========== SERVICES =========="
-                        kubectl get svc -n ${NAMESPACE}
-
-                        echo "========== POD LOGS =========="
-                        kubectl logs -l app=${APP_NAME} -n ${NAMESPACE} || true
+                    kubectl apply -f service.yaml
+                    kubectl apply -f deployment.yaml
                     '''
                 }
             }
         }
-
     }
 
     post {
-        success { echo "🎉 Course Recommendation CI/CD Pipeline SUCCESS" }
-        failure { echo "❌ Course Recommendation CI/CD Pipeline FAILED" }
-        always  { echo "🔁 Pipeline Finished" }
+        failure {
+            echo "Build failed. Please check logs."
+        }
+        success {
+            echo "Pipeline completed successfully!"
+        }
     }
 }
