@@ -87,17 +87,17 @@ spec:
         }
 
         stage('SonarQube Analysis') {
-            steps {
-                container('sonar-scanner') {
-                    sh """
-                      sonar-scanner \
-                        -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                        -Dsonar.host.url=${SONAR_HOST_URL} \
-                        -Dsonar.login=${SONAR_TOKEN}
-                    """
+        steps {
+            container('sonar-scanner') {
+                sh """
+                    sonar-scanner \
+                    -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                    -Dsonar.host.url=${SONAR_HOST_URL}
+                """
                 }
             }
         }
+
 
         stage('Login to Nexus') {
             steps {
