@@ -66,14 +66,7 @@ spec:
 
     stages {
 
-        stage('Checkout Code') {
-            steps {
-                sh '''
-                    rm -rf *
-                    git clone ${GIT_REPO} .
-                '''
-            }
-        }
+        
 
         stage('Build Docker Image') {
             steps {
