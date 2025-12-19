@@ -9,14 +9,18 @@ apiVersion: v1
 kind: Pod
 spec:
   containers:
-
   - name: dind
     image: docker:20.10.24-dind
     securityContext:
       privileged: true
+    env:
+      - name: DOCKER_TLS_CERTDIR
+        value: ""
     command: ["dockerd-entrypoint.sh"]
-    args: ["--host=tcp://127.0.0.1:2375", "--storage-driver=overlay2"]
-    tty: true
+    args: ["--host=tcp://0.0.0.0:2375", "--host=unix:///var/run/docker.sock", "--insecure-registry=nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"]
+    volumeMounts:
+      - mountPath: /var/run/docker.sock
+        name: docker-socket
 
   - name: kubectl
     image: bitnami/kubectl:latest
@@ -25,11 +29,23 @@ spec:
     securityContext:
       runAsUser: 0
       readOnlyRootFilesystem: false
+    volumeMounts:
+      - mountPath: /home/jenkins/agent
+        name: workspace-volume
 
   - name: sonar-scanner
     image: sonarsource/sonar-scanner-cli
     command: ["cat"]
     tty: true
+    volumeMounts:
+      - mountPath: /home/jenkins/agent
+        name: workspace-volume
+
+  volumes:
+    - name: docker-socket
+      emptyDir: {}
+    - name: workspace-volume
+      emptyDir: {}
 """
         }
     }
@@ -46,6 +62,7 @@ spec:
 
         NAMESPACE = "2401007"
 
+        SONAR_PROJECT_KEY = "2401007_Course_Recommendation_System"
         SONAR_HOST_URL = "http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000"
     }
 
@@ -55,7 +72,7 @@ spec:
             steps {
                 sh '''
                   rm -rf *
-                  git clone https://github.com/shalakabajaj/Course-Recommendation.git .
+                  git clone ${GIT_REPO} .
                 '''
             }
         }
@@ -65,8 +82,8 @@ spec:
                 container('dind') {
                     sh '''
                       docker build --no-cache \
-                        -t course-recommender:${BUILD_NUMBER} \
-                        -t course-recommender:latest .
+                        -t ${APP_NAME}:${BUILD_NUMBER} \
+                        -t ${APP_NAME}:latest .
                     '''
                 }
             }
@@ -77,7 +94,9 @@ spec:
                 container('sonar-scanner') {
                     sh '''
                       sonar-scanner \
-                        -Dsonar.host.url=http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000
+                        -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                        -Dsonar.host.url=${SONAR_HOST_URL} \
+                        -Dsonar.sources=.
                     '''
                 }
             }
@@ -87,9 +106,8 @@ spec:
             steps {
                 container('dind') {
                     sh '''
-                      docker login nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085 \
-                        -u student \
-                        -p Imcc@2025
+                      echo "Logging into Nexus registry..."
+                      docker login ${REGISTRY_HOST} -u student -p Imcc@2025
                     '''
                 }
             }
@@ -99,11 +117,11 @@ spec:
             steps {
                 container('dind') {
                     sh '''
-                      docker tag course-recommender:${BUILD_NUMBER} ${REGISTRY}/course-recommender:${BUILD_NUMBER}
-                      docker tag course-recommender:${BUILD_NUMBER} ${REGISTRY}/course-recommender:latest
+                      docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
+                      docker tag ${APP_NAME}:${BUILD_NUMBER} ${REGISTRY}/${APP_NAME}:latest
 
-                      docker push ${REGISTRY}/course-recommender:${BUILD_NUMBER}
-                      docker push ${REGISTRY}/course-recommender:latest
+                      docker push ${REGISTRY}/${APP_NAME}:${BUILD_NUMBER}
+                      docker push ${REGISTRY}/${APP_NAME}:latest
                     '''
                 }
             }
@@ -113,9 +131,9 @@ spec:
             steps {
                 container('kubectl') {
                     sh '''
-                      kubectl apply -f deployment.yaml -n 2401007
-                      kubectl apply -f service.yaml -n 2401007
-                      kubectl rollout status deployment/course-recommender -n 2401007
+                      kubectl apply -f deployment.yaml -n ${NAMESPACE}
+                      kubectl apply -f service.yaml -n ${NAMESPACE}
+                      kubectl rollout status deployment/${APP_NAME} -n ${NAMESPACE}
                     '''
                 }
             }
