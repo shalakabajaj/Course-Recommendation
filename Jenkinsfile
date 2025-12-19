@@ -52,21 +52,15 @@ spec:
     environment {
         APP_NAME = "course-recommender"
         GIT_REPO = "https://github.com/shalakabajaj/Course-Recommendation.git"
-
         REGISTRY_HOST = "nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085"
         REGISTRY_NAMESPACE = "2401007"
         REGISTRY = "${REGISTRY_HOST}/${REGISTRY_NAMESPACE}"
-
         NAMESPACE = "2401007"
-
         SONAR_PROJECT_KEY = "2401007_Course_Recommendation_System"
         SONAR_HOST_URL = "http://my-sonarqube-sonarqube.sonarqube.svc.cluster.local:9000"
-        SONAR_TOKEN = "sqp_e660f7a442e917c6a49c5b81f0506e1f52c4e61e"
     }
 
     stages {
-
-        
 
         stage('Build Docker Image') {
             steps {
@@ -89,39 +83,25 @@ spec:
                                 -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
                                 -Dsonar.host.url=${SONAR_HOST_URL} \
                                 -Dsonar.login=$SONAR_TOKEN \
-                                -Dsonar.sources=. \
-                                -Dsonar.python.version=3.10
+                                -Dsonar.sources=.
                         '''
                     }
                 }
             }
         }
-        stage('Login to Docker Registry') {
-            steps {
-                container('dind') {
-                    sh 'docker --version'
-                    sh 'sleep 10'
-                    sh 'docker login nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085 -u student -p Imcc@2025'
-                }
-            }
-        }
-        stage('Login to Nexus') {
-            steps {
-                container('dind') {
-                    sh '''
-                        docker login ${REGISTRY_HOST} -u admin -p Changeme@2025
-                    '''
-                }
-            }
-        }
 
-        stage('Build - Tag - Push Docker Image') {
+        stage('Docker Login & Push') {
             steps {
                 container('dind') {
-                    sh '''
-                        docker tag ${APP_NAME}:latest ${REGISTRY}/${APP_NAME}:latest
-                        docker push ${REGISTRY}/${APP_NAME}:latest
-                    '''
+                    withCredentials([
+                        usernamePassword(credentialsId: 'nexus-docker-cred', usernameVariable: 'USER', passwordVariable: 'PASS')
+                    ]) {
+                        sh '''
+                            docker login ${REGISTRY_HOST} -u $USER -p $PASS
+                            docker tag ${APP_NAME}:latest ${REGISTRY}/${APP_NAME}:latest
+                            docker push ${REGISTRY}/${APP_NAME}:latest
+                        '''
+                    }
                 }
             }
         }
@@ -139,8 +119,10 @@ spec:
                             kubectl apply -f deployment.yaml -n ${NAMESPACE}
                             kubectl apply -f service.yaml -n ${NAMESPACE}
 
-                            # Force rollout
-                            kubectl delete pod -l app=${APP_NAME} -n ${NAMESPACE} || true
+                            # Restart deployment to pick new image
+                            kubectl rollout restart deployment/${APP_NAME} -n ${NAMESPACE}
+
+                            # Wait until deployment is ready
                             kubectl rollout status deployment/${APP_NAME} -n ${NAMESPACE}
                             """
                         }
