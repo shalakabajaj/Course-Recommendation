@@ -102,8 +102,7 @@ spec:
         stage('Login to Nexus') {
             steps {
                 container('docker') {
-                    sh
-                      'docker login nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085 -u admin -p Changeme@2025'
+                    sh 'docker login nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085 -u admin -p Changeme@2025'
                     
                 }
             }
