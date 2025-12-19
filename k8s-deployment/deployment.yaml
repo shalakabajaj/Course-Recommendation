@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: course-recommender
-  namespace: 2401007
 spec:
   replicas: 1
   selector:
@@ -16,8 +15,5 @@ spec:
       containers:
       - name: course-recommender
         image: nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085/2401007/course-recommender:latest
-        imagePullPolicy: Always
         ports:
         - containerPort: 8501
-        command: ["streamlit"]
-        args: ["run", "frontend_ui.py", "--server.port=8501", "--server.address=0.0.0.0"]
