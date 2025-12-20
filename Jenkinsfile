@@ -64,15 +64,6 @@ spec:
 
     stages {
 
-        stage('Checkout Code') {
-            steps {
-                sh '''
-                  rm -rf *
-                  git clone https://github.com/shalakabajaj/Course-Recommendation.git .
-                '''
-            }
-        }
-
         stage('Build Docker Image') {
             steps {
                 container('dind') {
