@@ -1,40 +1,54 @@
-properties([pipelineTriggers([]), durabilityHint('PERFORMANCE_OPTIMIZED')])
-
 pipeline {
 
     agent {
         kubernetes {
-            yaml """
+            yaml '''
 apiVersion: v1
 kind: Pod
 spec:
   containers:
-
-  - name: dind
-    image: docker:20.10.24-dind
-    securityContext:
-      privileged: true
-    command: ["dockerd-entrypoint.sh"]
-    args: ["--host=tcp://127.0.0.1:2375", "--storage-driver=overlay2"]
+  - name: sonar-scanner
+    image: sonarsource/sonar-scanner-cli
+    command:
+    - cat
     tty: true
-
   - name: kubectl
     image: bitnami/kubectl:latest
-    command: ["cat"]
+    command:
+    - cat
     tty: true
     securityContext:
       runAsUser: 0
       readOnlyRootFilesystem: false
-
-  - name: sonar-scanner
-    image: sonarsource/sonar-scanner-cli
-    command: ["cat"]
-    tty: true
-"""
+    env:
+    - name: KUBECONFIG
+      value: /kube/config        
+    volumeMounts:
+    - name: kubeconfig-secret
+      mountPath: /kube/config
+      subPath: kubeconfig
+  - name: dind
+    image: docker:dind
+    securityContext:
+      privileged: true  # Needed to run Docker daemon
+    env:
+    - name: DOCKER_TLS_CERTDIR
+      value: ""  # Disable TLS for simplicity
+    volumeMounts:
+    - name: docker-config
+      mountPath: /etc/docker/daemon.json
+      subPath: daemon.json  # Mount the file directly here
+  volumes:
+  - name: docker-config
+    configMap:
+      name: docker-daemon-config
+  - name: kubeconfig-secret
+    secret:
+      secretName: kubeconfig-secret
+'''
         }
     }
-
-    options { skipDefaultCheckout() }
+        options { skipDefaultCheckout() }
 
     environment {
         APP_NAME = "course-recommender"
@@ -83,14 +97,12 @@ spec:
             }
         }
 
-        stage('Login to Nexus') {
+        stage('Login to Docker Registry') {
             steps {
                 container('dind') {
-                    sh '''
-                      docker login nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085 \
-                        -u admin \
-                        -p Changeme@2025
-                    '''
+                    sh 'docker --version'
+                    sh 'sleep 10'
+                    sh 'docker login nexus-service-for-docker-hosted-registry.nexus.svc.cluster.local:8085 -u admin -p Changeme@2025'
                 }
             }
         }
