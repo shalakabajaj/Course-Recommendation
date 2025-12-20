@@ -16,5 +16,8 @@ COPY . .
 # 6. Expose Streamlit default port
 EXPOSE 8501
 
-# 7. Run Streamlit app
+# 7. Disable Streamlit file watcher to avoid inotify limit issue
+ENV STREAMLIT_SERVER_FILE_WATCHER_TYPE=none
+
+# 8. Run Streamlit app
 CMD ["streamlit", "run", "frontend_ui.py", "--server.port=8501", "--server.address=0.0.0.0"]
