@@ -68,6 +68,8 @@ spec:
             steps {
                 container('dind') {
                     sh '''
+                      docker --version
+                      sleep 10
                       docker build -t course-recommender:latest .
                     '''
                 }
