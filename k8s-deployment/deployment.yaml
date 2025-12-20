@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: course-recommender
+  namespace: "2401007"
 spec:
   replicas: 1
   selector:
@@ -12,6 +13,9 @@ spec:
       labels:
         app: course-recommender
     spec:
+      imagePullSecrets:
+        - name: nexus-secret
+
       containers:
         - name: course-recommender
           image: 127.0.0.1:30085/2401007/course-recommender:latest
