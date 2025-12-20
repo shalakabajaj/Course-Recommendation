@@ -48,7 +48,6 @@ spec:
 '''
         }
     }
-        options { skipDefaultCheckout() }
 
     environment {
         APP_NAME = "course-recommender"
@@ -78,9 +77,7 @@ spec:
             steps {
                 container('dind') {
                     sh '''
-                      docker build --no-cache \
-                        -t course-recommender:${BUILD_NUMBER} \
-                        -t course-recommender:latest .
+                      docker build -t course-recommender:latest .
                     '''
                 }
             }
@@ -111,10 +108,8 @@ spec:
             steps {
                 container('dind') {
                     sh '''
-                      docker tag course-recommender:${BUILD_NUMBER} ${REGISTRY}/course-recommender:${BUILD_NUMBER}
-                      docker tag course-recommender:${BUILD_NUMBER} ${REGISTRY}/course-recommender:latest
+                      docker tag course-recommender:latest ${REGISTRY}/course-recommender:latest
 
-                      docker push ${REGISTRY}/course-recommender:${BUILD_NUMBER}
                       docker push ${REGISTRY}/course-recommender:latest
                     '''
                 }
