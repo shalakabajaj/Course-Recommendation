@@ -112,11 +112,13 @@ spec:
         stage('Deploy to Kubernetes') {
             steps {
                 container('kubectl') {
-                    sh '''
-                      kubectl apply -f deployment.yaml -n 2401007
-                      kubectl apply -f service.yaml -n 2401007
-                      kubectl rollout status deployment/course-recommender -n 2401007
-                    '''
+                    dir('k8s-deployment') {
+                        sh '''
+                            kubectl apply -f deployment.yaml -n 2401007
+                            kubectl apply -f service.yaml -n 2401007
+                            kubectl rollout status deployment/course-recommender -n 2401007
+                        '''
+                    }   
                 }
             }
         }
