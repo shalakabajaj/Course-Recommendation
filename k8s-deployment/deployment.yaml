@@ -13,29 +13,8 @@ spec:
         app: course-recommender
     spec:
       containers:
-      - name: course-recommender
-        image: 127.0.0.1:30085/2401007/course-recommender:latest
-        ports:
-        - containerPort: 8501
-        
-# -------------------------------
-# Ingress (Course Recommender System)
-# -------------------------------
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: course-recommender-ingress
-  namespace: "2401007"
-spec:
-  ingressClassName: nginx
-  rules:
-    - host: course-recommender.imcc.com
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: course-recommender-service
-                port:
-                  number: 80
+        - name: course-recommender
+          image: 127.0.0.1:30085/2401007/course-recommender:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8501
